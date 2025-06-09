@@ -9,7 +9,7 @@ public class SimpleDb {
     private String user;
     private String password;
     private String dbName;
-    private Connection conn;
+    private ThreadLocal<Connection> conn;
     private boolean closeable;
 
 
@@ -19,7 +19,13 @@ public class SimpleDb {
     public SimpleDb(String url, String user, String password, String dbName)  {
         try{
             Class.forName("com.mysql.cj.jdbc.Driver");
-            conn = DriverManager.getConnection(String.format("jdbc:mysql://%s:3306/%s", url, dbName), user, password);
+            conn = ThreadLocal.withInitial(()-> {
+                try {
+                    return DriverManager.getConnection(String.format("jdbc:mysql://%s:3306/%s", url, dbName), user, password);
+                } catch (SQLException e) {
+                    throw new RuntimeException(e);
+                }
+            });
             this.url = url;
             this.user = user;
             this.password = password;
@@ -33,7 +39,7 @@ public class SimpleDb {
 
     public void run(String sql){
         try{
-            Statement stmt = conn.createStatement();
+            Statement stmt = conn.get().createStatement();
             stmt.execute(sql);
             stmt.close();
         }catch (SQLException e){
@@ -44,7 +50,7 @@ public class SimpleDb {
 
     public void run(String sql, String title, String body, boolean isBlind){
         try{
-            PreparedStatement stmt = conn.prepareStatement(sql);
+            PreparedStatement stmt = conn.get().prepareStatement(sql);
             stmt.setString(1, title);
             stmt.setString(2, body);
             stmt.setBoolean(3, isBlind);
@@ -59,7 +65,7 @@ public class SimpleDb {
             Connection conn = DriverManager.getConnection(String.format("jdbc:mysql://%s:3306/%s", url, dbName), user, password);
             conn.setAutoCommit(false);
             Sql sql = new Sql(conn, closeable);
-            this.conn = conn;
+            this.conn.set(conn);
             return sql;
 
         }catch (SQLException e){
@@ -85,14 +91,14 @@ public class SimpleDb {
     public void commit(){
         run("commit");
         try{
-            conn.close();
+            conn.get().close();
         }catch (SQLException e){
         }
     }
 
     public void close(){
         try{
-            conn.close();
+            conn.get().close();
 
         }catch(SQLException e){
 
